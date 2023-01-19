@@ -23,30 +23,29 @@ namespace AttendanceAutoRun
                 cmd = new OleDbCommand();
                 cmd.Connection = con;
                 var whereDate = DateTime.Today.Date;
+                var conn = ConfigurationManager.AppSettings.Get("SQLServerConnectionString");
+                var item = 0;
 
-                var query = "SELECT * FROM CHECKINOUT";
-                //var query = "SELECT * FROM CHECKINOUT where CHECKTIME >= #" + whereDate.ToString("dd/MM/yyyy HH:mm:ss") + "#";
-                var finalQuery = string.Empty;
-
-                using (var reader = new StringReader(query))
+                using (SqlConnection connection = new SqlConnection(conn))
                 {
-                    finalQuery = reader.ReadLine();
-                    if (string.IsNullOrEmpty(finalQuery))
+                    connection.Open();
+                    using (var cmd = connection.CreateCommand())
                     {
-                        finalQuery = "SELECT * FROM CHECKINOUT";
+                        cmd.CommandText = "Select count(*) from CHECKINOUT";
+                        item = (Int32)cmd.ExecuteScalar();
                     }
+                    connection.Close();
                 }
-
-                //cmd.CommandText = query;
-                cmd.CommandText = finalQuery;
+                var query = "SELECT * FROM CHECKINOUT";
+                query += item < 1 ? "" : " where CHECKTIME >= #" + whereDate.ToString("dd/MM/yyyy HH:mm:ss") + "#";
+                
+                cmd.CommandText = query;
                 con.Open();
                 reader = cmd.ExecuteReader();
                 var datas = new DataTable();
                 datas.Load(reader);
 
-                //var conn = ConfigurationManager.ConnectionStrings["SQLServerConnectionString"].ConnectionString;
                 //using (SqlConnection connection = new SqlConnection("Data Source=localhost;Initial Catalog=DB_ATTD;Integrated Security=True"))
-                var conn = ConfigurationManager.AppSettings.Get("SQLServerConnectionString");
                 using (SqlConnection connection = new SqlConnection(conn))
                 {
                     connection.Open();
@@ -73,6 +72,21 @@ namespace AttendanceAutoRun
                             Console.WriteLine("Exception : " + ex.Message);
                         }
                     }
+
+                    using (var cmd = connection.CreateCommand())
+                    {
+                        cmd.CommandText = "DELETE FROM dbo.AttendanceMachinePolling"; //WHERE AttendanceDate = @word
+                        //cmd.Parameters.AddWithValue("@word", whereDate);
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    //var queryAttd = ConfigurationManager.ConnectionStrings["QueryToAttendanceMachinePolling"].ConnectionString;
+                    using (var cmd = connection.CreateCommand())
+                    {
+                        cmd.CommandText = "insert into AttendanceMachinePolling select null as Id, SENSORID as Barcode, concat(cast(CHECKTIME as date), ' 00:00:00.000') as AttendanceDate, Cast(CHECKTIME as time(7)) as AttendanceTime, case when CHECKTYPE = 'o' then 0 else 1 end as AttendanceType, GETDATE() as CreatedDate from CHECKINOUT";
+                        //cmd.Parameters.AddWithValue("@word", whereDate);
+                        cmd.ExecuteNonQuery();
+                    }
                 }
 
                 con.Close();
@@ -83,6 +97,8 @@ namespace AttendanceAutoRun
                 Console.WriteLine("==================================== Filed Execute ====================================");
                 Console.WriteLine("Exception : " + e.Message);
             }
+
+            Console.ReadKey();
         }
     }
 }
