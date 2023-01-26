@@ -90,15 +90,17 @@ namespace AttendanceAutoRun
 
                     using (var cmd = connection.CreateCommand())
                     {
-                        cmd.CommandText = "DELETE FROM dbo.AttendanceMachinePolling"; //WHERE AttendanceDate = @word
-                        //cmd.Parameters.AddWithValue("@word", whereDate);
+                        cmd.CommandText = "DELETE FROM dbo.AttendanceMachinePolling WHERE AttendanceDate >= @word"; //WHERE AttendanceDate = @word
+                        cmd.Parameters.AddWithValue("@word", whereDate);
                         cmd.ExecuteNonQuery();
                     }
 
                     var queryAttd = ConfigurationManager.AppSettings["MigrationQuery"].ToLower();
                     using (var cmd = connection.CreateCommand())
                     {
+                        queryAttd += " WHERE CHECKTIME >= @word";
                         cmd.CommandText = queryAttd;
+                        cmd.Parameters.AddWithValue("@word", whereDate);
                         //cmd.CommandText = "insert into AttendanceMachinePolling select null as Id, cast([USERID] as nvarchar()) as Barcode, concat(cast(CHECKTIME as date), ' 00:00:00.000') as AttendanceDate, Cast(CHECKTIME as time(7)) as AttendanceTime, case when CHECKTYPE = 'o' then 0 else 1 end as AttendanceType, GETDATE() as CreatedDate from CHECKINOUT";
                         cmd.ExecuteNonQuery();
                     }
