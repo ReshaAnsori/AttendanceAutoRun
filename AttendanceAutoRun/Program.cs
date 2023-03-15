@@ -4,6 +4,8 @@ using System.Data.OleDb;
 using System.Data.SqlClient;
 using System.IO;
 using System.Configuration;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace AttendanceAutoRun
 {
@@ -28,14 +30,17 @@ namespace AttendanceAutoRun
                 cmd.Connection = con;
 
                 int backDay = 1;
-                var cek  = Int32.TryParse(ConfigurationManager.AppSettings["BackDay"], out backDay);
+                var cek = Int32.TryParse(ConfigurationManager.AppSettings["BackDay"], out backDay);
                 backDay = !cek ? 1 : backDay;
 
+                // Set parameter
+                //var backDay = DateTime.Today.DayOfYear;
                 var whereDate = DateTime.Today.AddDays(-backDay).Date;
                 var conn = ConfigurationManager.AppSettings.Get("SQLServerConnectionString");
                 //var item = 0;
                 var item = false;
 
+                // Cek data existing pada stagging SQL server
                 using (SqlConnection connection = new SqlConnection(conn))
                 {
                     connection.Open();
@@ -47,6 +52,8 @@ namespace AttendanceAutoRun
                     }
                     connection.Close();
                 }
+
+                // Query select untuk mdb, jika data stagging kosong, parameter where > tanggal gak ditambah
                 var query = "SELECT * FROM CHECKINOUT";
                 query += !item ? "" : " where CHECKTIME >= #" + whereDate.ToString("dd/MM/yyyy HH:mm:ss") + "#";
                 
@@ -56,12 +63,15 @@ namespace AttendanceAutoRun
                 var datas = new DataTable();
                 datas.Load(reader);
 
+                List<DataRow> list = datas.AsEnumerable().ToList();
+                Console.WriteLine("Data dari access per-tanggal " + whereDate.ToString("dd/MM/yyyy HH:mm:ss") + " : " + list.Count());
+
                 //using (SqlConnection connection = new SqlConnection("Data Source=localhost;Initial Catalog=DB_ATTD;Integrated Security=True"))
                 using (SqlConnection connection = new SqlConnection(conn))
                 {
                     connection.Open();
-
-                    if(item)
+                    // jika data stagging ada, ini di jalankan dengan menghapus data existing >= parameter date
+                    if(item && list.Count > 0)
                     {
                         using (var cmd = connection.CreateCommand())
                         {
@@ -71,12 +81,13 @@ namespace AttendanceAutoRun
                         }
                     }
 
+                    // insert data mdb ke stagging
                     using (SqlBulkCopy bulkCopy = new SqlBulkCopy(connection))
                     {
-                        bulkCopy.DestinationTableName = "dbo.CHECKINOUT";
-
                         try
                         {
+                            bulkCopy.DestinationTableName = "dbo.CHECKINOUT";
+                            bulkCopy.BulkCopyTimeout = 0;
                             // Write unchanged rows from the source to the destination.
                             bulkCopy.WriteToServer(datas, DataRowState.Unchanged);
                         }
@@ -84,10 +95,11 @@ namespace AttendanceAutoRun
                         {
                             ErrorStts = true;
                             Console.WriteLine("==================================== Filed Execute ====================================");
-                            Console.WriteLine("Exception : " + ex.Message);
+                            Console.WriteLine("Exception 1 : " + ex.Message);
                         }
                     }
 
+                    // hapus semua data pada tabel ready yang date nya >= parameter tanggal
                     using (var cmd = connection.CreateCommand())
                     {
                         cmd.CommandText = "DELETE FROM dbo.AttendanceMachinePolling WHERE AttendanceDate >= @word"; //WHERE AttendanceDate = @word
@@ -96,12 +108,15 @@ namespace AttendanceAutoRun
                     }
 
                     var queryAttd = ConfigurationManager.AppSettings["MigrationQuery"].ToLower();
+                    queryAttd += !item ? "" : " WHERE CHECKTIME >= @word";
+
                     using (var cmd = connection.CreateCommand())
                     {
-                        queryAttd += " WHERE CHECKTIME >= @word";
                         cmd.CommandText = queryAttd;
-                        cmd.Parameters.AddWithValue("@word", whereDate);
-                        //cmd.CommandText = "insert into AttendanceMachinePolling select null as Id, cast([USERID] as nvarchar()) as Barcode, concat(cast(CHECKTIME as date), ' 00:00:00.000') as AttendanceDate, Cast(CHECKTIME as time(7)) as AttendanceTime, case when CHECKTYPE = 'o' then 0 else 1 end as AttendanceType, GETDATE() as CreatedDate from CHECKINOUT";
+                        if (item && list.Count > 0)
+                        {
+                            cmd.Parameters.AddWithValue("@word", whereDate);
+                        }
                         cmd.ExecuteNonQuery();
                     }
                 }
@@ -113,7 +128,7 @@ namespace AttendanceAutoRun
             {
                 ErrorStts = true;
                 Console.WriteLine("==================================== Filed Execute ====================================");
-                Console.WriteLine("Exception : " + e.Message);
+                Console.WriteLine("Exception 2 : " + e.Message);
             }
             if(ErrorStts)
                 Console.ReadKey();
