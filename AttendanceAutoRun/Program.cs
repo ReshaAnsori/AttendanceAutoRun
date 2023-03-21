@@ -18,11 +18,14 @@ namespace AttendanceAutoRun
         static void Main(string[] args)
         {
             var ErrorStts = false;
+            var timeout = 120;
+            var cekTimeout = Int32.TryParse(ConfigurationManager.AppSettings["TimeOutInSeconds"], out timeout);
+            timeout = cekTimeout ? timeout : 120;
+
             if (ConfigurationManager.AppSettings["DebugConsole"].ToLower() == "true")
                 ErrorStts = true;
             try
             {
-
                 con = new OleDbConnection();
                 //con.ConnectionString = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=D:/Private/Coba-coba/attBackup.mdb";
                 con.ConnectionString = ConfigurationManager.AppSettings.Get("AccessConnectionString");
@@ -46,9 +49,20 @@ namespace AttendanceAutoRun
                     connection.Open();
                     using (var cmd = connection.CreateCommand())
                     {
-                        //cmd.CommandText = "Select count(*) from CHECKINOUT";
-                        cmd.CommandText = "select case when count(*) > 0 then 1 else 0 end from CHECKINOUT";
-                        item = (Int32)cmd.ExecuteScalar() > 0;
+                        try
+                        {
+                            cmd.CommandTimeout = timeout;
+                            //cmd.CommandText = "Select count(*) from CHECKINOUT";
+                            cmd.CommandText = "select case when count(*) > 0 then 1 else 0 end from CHECKINOUT";
+                            item = (Int32)cmd.ExecuteScalar() > 0;
+                        }
+                        catch (Exception ex)
+                        {
+                            ErrorStts = true;
+                            Console.WriteLine("==================================== Failed Execute ====================================");
+                            Console.WriteLine("Exception 1 : " + ex.Message);
+                        }
+
                     }
                     connection.Close();
                 }
@@ -75,9 +89,20 @@ namespace AttendanceAutoRun
                     {
                         using (var cmd = connection.CreateCommand())
                         {
-                            cmd.CommandText = "DELETE FROM dbo.CHECKINOUT WHERE CHECKTIME >= @word";
-                            cmd.Parameters.AddWithValue("@word", whereDate);
-                            cmd.ExecuteNonQuery();
+                            try
+                            {
+                                cmd.CommandTimeout = timeout;
+                                cmd.CommandText = "DELETE FROM dbo.CHECKINOUT WHERE CHECKTIME >= @word";
+                                cmd.Parameters.AddWithValue("@word", whereDate);
+                                cmd.ExecuteNonQuery();
+
+                            }
+                            catch (Exception ex)
+                            {
+                                ErrorStts = true;
+                                Console.WriteLine("==================================== Failed Execute ====================================");
+                                Console.WriteLine("Exception 2 : " + ex.Message);
+                            }
                         }
                     }
 
@@ -87,24 +112,34 @@ namespace AttendanceAutoRun
                         try
                         {
                             bulkCopy.DestinationTableName = "dbo.CHECKINOUT";
-                            bulkCopy.BulkCopyTimeout = 0;
+                            bulkCopy.BulkCopyTimeout = timeout;
                             // Write unchanged rows from the source to the destination.
                             bulkCopy.WriteToServer(datas, DataRowState.Unchanged);
                         }
                         catch (Exception ex)
                         {
                             ErrorStts = true;
-                            Console.WriteLine("==================================== Filed Execute ====================================");
-                            Console.WriteLine("Exception 1 : " + ex.Message);
+                            Console.WriteLine("==================================== Failed Execute ====================================");
+                            Console.WriteLine("Exception 3 : " + ex.Message);
                         }
                     }
 
                     // hapus semua data pada tabel ready yang date nya >= parameter tanggal
                     using (var cmd = connection.CreateCommand())
                     {
-                        cmd.CommandText = "DELETE FROM dbo.AttendanceMachinePolling WHERE AttendanceDate >= @word"; //WHERE AttendanceDate = @word
-                        cmd.Parameters.AddWithValue("@word", whereDate);
-                        cmd.ExecuteNonQuery();
+                        try
+                        {
+                            cmd.CommandTimeout = timeout;
+                            cmd.CommandText = "DELETE FROM dbo.AttendanceMachinePolling WHERE AttendanceDate >= @word"; //WHERE AttendanceDate = @word
+                            cmd.Parameters.AddWithValue("@word", whereDate);
+                            cmd.ExecuteNonQuery();
+                        }
+                        catch (Exception ex)
+                        {
+                            ErrorStts = true;
+                            Console.WriteLine("==================================== Failed Execute ====================================");
+                            Console.WriteLine("Exception 4 : " + ex.Message);
+                        }
                     }
 
                     var queryAttd = ConfigurationManager.AppSettings["MigrationQuery"].ToLower();
@@ -112,12 +147,23 @@ namespace AttendanceAutoRun
 
                     using (var cmd = connection.CreateCommand())
                     {
-                        cmd.CommandText = queryAttd;
-                        if (item && list.Count > 0)
+                        try
                         {
-                            cmd.Parameters.AddWithValue("@word", whereDate);
+                            cmd.CommandTimeout = timeout;
+                            cmd.CommandText = queryAttd;
+                            if (item)
+                            {
+                                cmd.Parameters.AddWithValue("@word", whereDate);
+                            }
+                            cmd.ExecuteNonQuery();
+
                         }
-                        cmd.ExecuteNonQuery();
+                        catch (Exception ex)
+                        {
+                            ErrorStts = true;
+                            Console.WriteLine("==================================== Failed Execute ====================================");
+                            Console.WriteLine("Exception 5 : " + ex.Message);
+                        }
                     }
                 }
 
@@ -127,8 +173,8 @@ namespace AttendanceAutoRun
             catch (Exception e)
             {
                 ErrorStts = true;
-                Console.WriteLine("==================================== Filed Execute ====================================");
-                Console.WriteLine("Exception 2 : " + e.Message);
+                Console.WriteLine("==================================== Failed Execute ====================================");
+                Console.WriteLine("Exception 6 : " + e.Message);
             }
             if(ErrorStts)
                 Console.ReadKey();
